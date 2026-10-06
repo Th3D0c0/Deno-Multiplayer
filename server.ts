@@ -38,6 +38,7 @@ Deno.serve((request) => {
     }
     
     const { socket, response } = Deno.upgradeWebSocket(request);
+    guardSocket(socket); // comment this line to disable idle/max timeout for testing (careful on Deno Deploy free plan)
     const id = crypto.randomUUID();
 
     players[id] = { id, x: 100, y: 100 };
@@ -74,3 +75,24 @@ Deno.serve((request) => {
 
   return new Response("Not found", { status: 404 });
 });
+
+
+// When using Deno Deploy, the free plan's quota can be conserved by closing sockets that are idle or have been connected for too long
+const IDLE_MS = 10 * 60 * 1000;     // close connection after 10 minutes of inactivity
+const MAX_MS = 4 * 60 * 60 * 1000;  // close the connection after 4 hours
+
+function guardSocket(socket: WebSocket) {
+  let idle: number | undefined;
+  const resetIdle = () => {
+    clearTimeout(idle);
+    idle = setTimeout(() => socket.close(4000, "idle timeout"), IDLE_MS);
+  };
+  const max = setTimeout(() => socket.close(4001, "max duration"), MAX_MS);
+
+  socket.addEventListener("open", resetIdle);
+  socket.addEventListener("message", resetIdle);
+  socket.addEventListener("close", () => {
+    clearTimeout(idle);
+    clearTimeout(max);
+  });
+}
