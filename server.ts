@@ -7,6 +7,11 @@ interface Player {
 const players: Record<string, Player> = {};
 const sockets = new Map<string, WebSocket>();
 
+const grid_width = 30;
+const grid_length = 20;
+
+
+
 function broadcast(message: unknown, except?: string) {
   for (const [id, socket] of sockets) {
     if (id !== except) {
@@ -36,7 +41,7 @@ Deno.serve((request) => {
     if (request.headers.get("upgrade") !== "websocket") {
       return new Response(null, { status: 501 });
     }
-    
+
     const { socket, response } = Deno.upgradeWebSocket(request);
     guardSocket(socket); // comment this line to disable idle/max timeout for testing (careful on Deno Deploy free plan)
     const id = crypto.randomUUID();
