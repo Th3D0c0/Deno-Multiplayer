@@ -3,26 +3,892 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Bomber Deno CrockoDelo</title>
   <script src="client.js" defer></script>
   <style>
-    canvas {
-      border: 1px solid black;
-      background: #eee;
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #0b0d1a;
+      color: #fff;
+      font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      overscroll-behavior: none;
+      touch-action: none;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* the game world, fullscreen */
+    #game {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+
+    /* dark corners, makes the middle pop */
+    #vignette {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 10, 0.55) 100%);
+    }
+
+    .panel {
+      background: rgba(12, 14, 32, 0.72);
+      border: 2px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(3px);
+    }
+
+    /* ---------- stats bar (top left) ---------- */
+    #stats {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 6px 8px;
+      max-width: calc(100vw - 300px);
+      pointer-events: none;
+    }
+
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      font-weight: bold;
+      font-size: 17px;
+      white-space: nowrap;
+    }
+
+    .stat .label {
+      font-size: 12px;
+      opacity: 0.7;
+      font-weight: normal;
+    }
+
+    .stat.off {
+      opacity: 0.35;
+    }
+
+    .bump {
+      animation: bump 0.4s ease-out;
+    }
+
+    @keyframes bump {
+      0% {
+        transform: scale(1);
+      }
+
+      35% {
+        transform: scale(1.4);
+        background: rgba(255, 216, 77, 0.5);
+      }
+
+      100% {
+        transform: scale(1);
+      }
+    }
+
+    /* ---------- leaderboard + kill feed (top right) ---------- */
+    #side {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      width: 250px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    #lbBox {
+      padding: 8px 10px;
+    }
+
+    .panelTitle {
+      font-weight: bold;
+      font-size: 15px;
+      margin-bottom: 4px;
+      color: #ffd84d;
+      letter-spacing: 1px;
+    }
+
+    #lb {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      font-size: 14px;
+    }
+
+    #lb li {
+      display: flex;
+      gap: 6px;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+
+    #lb li.me {
+      background: rgba(255, 216, 77, 0.28);
+      color: #fff6c2;
+      font-weight: bold;
+    }
+
+    #lb .rank {
+      width: 22px;
+      opacity: 0.7;
+    }
+
+    #lb .name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #lb .kills {
+      font-weight: bold;
+    }
+
+    #lb .streak {
+      color: #ff8a3d;
+      font-size: 12px;
+    }
+
+    #lb li.gap {
+      opacity: 0.5;
+      justify-content: center;
+    }
+
+    #feed {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: flex-end;
+    }
+
+    .feedRow {
+      background: rgba(12, 14, 32, 0.7);
+      border-radius: 8px;
+      padding: 3px 8px;
+      font-size: 13px;
+      max-width: 250px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .feedRow.new {
+      animation: slideIn 0.35s cubic-bezier(.2, 1.4, .4, 1);
+    }
+
+    .feedRow.mine {
+      border: 1px solid #ffd84d;
+    }
+
+    .feedRow .killer {
+      color: #ffb22e;
+      font-weight: bold;
+    }
+
+    .feedRow .victim {
+      color: #ff8fa3;
+    }
+
+    .feedRow .streak {
+      color: #ffd84d;
+      font-weight: bold;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(120%);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    /* ---------- minimap (bottom left) ---------- */
+    #mapBox {
+      position: fixed;
+      left: 12px;
+      bottom: 12px;
+      padding: 6px;
+      pointer-events: none;
+    }
+
+    #online {
+      font-size: 13px;
+      margin: 0 2px 5px;
+      white-space: nowrap;
+    }
+
+    #minimap {
+      display: block;
+      width: 150px;
+      height: 150px;
+      border-radius: 8px;
+    }
+
+    #mute {
+      position: fixed;
+      right: 12px;
+      bottom: 12px;
+      font-size: 22px;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      background: rgba(12, 14, 32, 0.72);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    /* ---------- big centre texts ---------- */
+    #callout {
+      position: fixed;
+      top: 26%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: Impact, "Arial Black", sans-serif;
+      font-size: clamp(36px, 8vw, 84px);
+      color: #ffd84d;
+      -webkit-text-stroke: 3px #3a1500;
+      text-shadow: 0 6px 0 #ff5a1f, 0 10px 30px rgba(0, 0, 0, 0.6);
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+    }
+
+    #callout.small {
+      font-size: clamp(22px, 4vw, 38px);
+      -webkit-text-stroke: 2px #3a1500;
+      text-shadow: 0 4px 0 #ff5a1f, 0 8px 20px rgba(0, 0, 0, 0.6);
+    }
+
+    #callout.show {
+      animation: callout 1.8s cubic-bezier(.2, 1.5, .4, 1) forwards;
+    }
+
+    @keyframes callout {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.2) rotate(-12deg);
+      }
+
+      14% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1.2) rotate(4deg);
+      }
+
+      28% {
+        transform: translate(-50%, -50%) scale(1) rotate(0deg);
+      }
+
+      80% {
+        opacity: 1;
+        transform: translate(-50%, -55%) scale(1);
+      }
+
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -90%) scale(0.9);
+      }
+    }
+
+    #death {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      pointer-events: none;
+      background: radial-gradient(ellipse at center, rgba(120, 0, 10, 0.25), rgba(40, 0, 0, 0.65));
+      animation: fadeIn 0.3s ease-out;
+    }
+
+    #death .boom {
+      font-family: Impact, "Arial Black", sans-serif;
+      font-size: clamp(48px, 11vw, 120px);
+      color: #ffb22e;
+      -webkit-text-stroke: 3px #400;
+      text-shadow: 0 8px 0 #c01010, 0 14px 40px rgba(0, 0, 0, 0.7);
+      animation: boomShake 0.5s ease-out;
+    }
+
+    #deathBy {
+      font-size: clamp(18px, 3vw, 30px);
+      font-weight: bold;
+      text-shadow: 0 2px 6px #000;
+      text-align: center;
+      padding: 0 16px;
+    }
+
+    #deathTimer {
+      font-size: 22px;
+      opacity: 0.85;
+      text-shadow: 0 2px 6px #000;
+    }
+
+    @keyframes boomShake {
+      0% {
+        transform: scale(3) rotate(-10deg);
+        opacity: 0;
+      }
+
+      40% {
+        transform: scale(0.9) rotate(4deg);
+        opacity: 1;
+      }
+
+      60% {
+        transform: scale(1.1) rotate(-2deg);
+      }
+
+      100% {
+        transform: scale(1) rotate(0);
+      }
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    #reconnect {
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #c01030;
+      padding: 10px 18px;
+      border-radius: 12px;
+      font-weight: bold;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+      z-index: 20;
+      animation: pulse 1s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulse {
+      from {
+        transform: translateX(-50%) scale(1);
+      }
+
+      to {
+        transform: translateX(-50%) scale(1.05);
+      }
+    }
+
+    /* ---------- start screen ---------- */
+    #start {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(8, 10, 30, 0.25) 0%, rgba(5, 6, 18, 0.8) 100%);
+      z-index: 10;
+      transition: opacity 0.4s;
+      padding: 16px;
+    }
+
+    #start.leaving {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .startCard {
+      text-align: center;
+      max-width: 760px;
+      width: 100%;
+    }
+
+    #title {
+      margin: 0 0 6px;
+      font-family: Impact, "Arial Black", sans-serif;
+      font-size: clamp(34px, 7.5vw, 86px);
+      line-height: 1.05;
+      letter-spacing: 2px;
+    }
+
+    #title .word {
+      display: inline-block;
+      margin: 0 0.18em;
+      white-space: nowrap;
+    }
+
+    #title .letter {
+      display: inline-block;
+      -webkit-text-stroke: 3px #1a0a00;
+      text-shadow: 0 6px 0 rgba(0, 0, 0, 0.45);
+      animation: bounce 1.8s ease-in-out infinite;
+    }
+
+    @keyframes bounce {
+
+      0%,
+      100% {
+        transform: translateY(0) rotate(0deg);
+      }
+
+      25% {
+        transform: translateY(-14px) rotate(-4deg);
+      }
+
+      50% {
+        transform: translateY(0) rotate(0deg);
+      }
+    }
+
+    .subtitle {
+      margin: 0 0 22px;
+      font-size: 18px;
+      text-shadow: 0 2px 4px #000;
+      opacity: 0.9;
+    }
+
+    .joinRow {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    #nameInput {
+      font-size: 22px;
+      padding: 12px 16px;
+      border-radius: 14px;
+      border: 3px solid #ffd84d;
+      background: rgba(10, 12, 30, 0.85);
+      color: #fff;
+      width: min(320px, 90vw);
+      outline: none;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    #nameInput:focus {
+      box-shadow: 0 0 0 4px rgba(255, 216, 77, 0.35);
+    }
+
+    #playButton {
+      font-family: Impact, "Arial Black", sans-serif;
+      font-size: 28px;
+      letter-spacing: 2px;
+      padding: 10px 34px;
+      border-radius: 14px;
+      border: none;
+      color: #fff;
+      background: linear-gradient(#ffb22e, #ff5a1f);
+      box-shadow: 0 6px 0 #a3300a, 0 10px 24px rgba(0, 0, 0, 0.5);
+      cursor: pointer;
+      text-shadow: 0 2px 0 #a3300a;
+      transition: transform 0.1s;
+      animation: wiggle 2.4s ease-in-out infinite;
+    }
+
+    #playButton:hover {
+      transform: scale(1.07);
+    }
+
+    #playButton:active {
+      transform: translateY(5px);
+      box-shadow: 0 1px 0 #a3300a;
+    }
+
+    @keyframes wiggle {
+
+      0%,
+      90%,
+      100% {
+        rotate: 0deg;
+      }
+
+      93% {
+        rotate: -4deg;
+      }
+
+      96% {
+        rotate: 4deg;
+      }
+    }
+
+    .help {
+      margin-top: 22px;
+      display: flex;
+      gap: 18px;
+      justify-content: center;
+      flex-wrap: wrap;
+      font-size: 16px;
+      text-shadow: 0 2px 4px #000;
+    }
+
+    kbd {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: #fff;
+      color: #222;
+      font-weight: bold;
+      box-shadow: 0 3px 0 #999;
+      font-family: inherit;
+    }
+
+    .powerups {
+      margin-top: 14px;
+      font-size: 15px;
+      opacity: 0.85;
+      text-shadow: 0 2px 4px #000;
+    }
+
+    .live {
+      margin-top: 18px;
+      font-size: 13px;
+      opacity: 0.7;
+    }
+
+    .live::before {
+      content: "";
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #ff3355;
+      margin-right: 6px;
+      animation: pulseDot 1s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulseDot {
+      from {
+        opacity: 0.3;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    /* ---------- touch controls (only on touch screens) ---------- */
+    #touch {
+      display: none;
+    }
+
+    @media (pointer: coarse) {
+      #touch {
+        display: block;
+      }
+
+      #mapBox {
+        bottom: auto;
+        top: 70px;
+        left: 12px;
+      }
+
+      #minimap {
+        width: 100px;
+        height: 100px;
+      }
+
+      #side {
+        width: 190px;
+      }
+
+      #lb {
+        font-size: 12px;
+      }
+
+      #mute {
+        bottom: auto;
+        top: 12px;
+        right: 210px;
+      }
+
+      #stats {
+        max-width: calc(100vw - 270px);
+      }
+
+      .stat {
+        font-size: 14px;
+      }
+    }
+
+    /* phones: compact HUD so the middle of the screen (your player) stays free */
+    @media (max-width: 700px) {
+      #stats {
+        top: 6px;
+        left: 6px;
+        right: 6px;
+        max-width: none;
+        justify-content: center;
+        gap: 3px;
+        padding: 4px;
+      }
+
+      .stat {
+        font-size: 12px;
+        padding: 2px 6px;
+      }
+
+      .stat .label {
+        font-size: 10px;
+      }
+
+      #side {
+        top: 84px;
+        right: 6px;
+        width: 150px;
+        gap: 4px;
+      }
+
+      #lbBox {
+        padding: 5px 6px;
+      }
+
+      .panelTitle {
+        font-size: 11px;
+      }
+
+      #lb {
+        font-size: 11px;
+      }
+
+      #lb li {
+        padding: 1px 3px;
+      }
+
+      #lb li:nth-child(n+6):not(.me) {
+        display: none;
+      }
+
+      .feedRow {
+        font-size: 10px;
+        padding: 2px 5px;
+        max-width: 150px;
+      }
+
+      .feedRow:nth-child(n+4) {
+        display: none;
+      }
+
+      #mapBox {
+        top: 84px;
+        bottom: auto;
+        left: 6px;
+        padding: 4px;
+      }
+
+      #online {
+        font-size: 10px;
+      }
+
+      #minimap {
+        width: 80px;
+        height: 80px;
+      }
+
+      #mute {
+        top: auto;
+        right: 40px;
+        bottom: 160px;
+        width: 40px;
+        height: 40px;
+        font-size: 18px;
+      }
+
+      /* the start card needs the whole screen */
+      body.onStart #side,
+      body.onStart #mapBox {
+        display: none;
+      }
+
+      .subtitle {
+        font-size: 15px;
+      }
+
+      .help {
+        font-size: 13px;
+        gap: 10px;
+      }
+
+      .powerups {
+        font-size: 12px;
+      }
+    }
+
+    .touchHelp {
+      display: none;
+    }
+
+    @media (pointer: coarse) {
+      .help {
+        display: none;
+      }
+
+      .touchHelp {
+        display: flex;
+      }
+    }
+
+    #dpad {
+      position: fixed;
+      left: 24px;
+      bottom: 24px;
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      touch-action: none;
+    }
+
+    #dpad::before {
+      content: "▲\A◀  ▶\A▼";
+      white-space: pre;
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      line-height: 1.6;
+      font-size: 18px;
+      color: rgba(255, 255, 255, 0.35);
+    }
+
+    #dpadKnob {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 60px;
+      height: 60px;
+      margin: -30px 0 0 -30px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.45);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    #bombButton {
+      position: fixed;
+      right: 30px;
+      bottom: 34px;
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      font-size: 50px;
+      border: 4px solid rgba(255, 255, 255, 0.5);
+      background: radial-gradient(circle at 35% 30%, #ff8a3d, #c0300a);
+      box-shadow: 0 6px 0 #6e1a05, 0 10px 20px rgba(0, 0, 0, 0.5);
+      touch-action: none;
+    }
+
+    #bombButton:active {
+      transform: translateY(4px);
+      box-shadow: 0 2px 0 #6e1a05;
     }
   </style>
 </head>
 
-<body>
-  <h1 id="controls">Multiplayer Positionen
-    <button id="left">&#8592;</button>
-    <button id="right">&#8594;</button>
-    <button id="up">&#8593;</button>
-    <button id="down">&#8595;</button>
-  </h1>
-  <p id="lives"></p>
-  <canvas id="game" width="630" height="330"></canvas>
+<body class="onStart">
+  <canvas id="game"></canvas>
+  <div id="vignette"></div>
+
+  <!-- HUD -->
+  <div id="stats" class="panel hidden">
+    <div class="stat" title="Leben"><span id="statLives">❤️❤️❤️</span></div>
+    <div class="stat" title="Bomben (frei / maximal)">💣 <span id="statBombs">1</span></div>
+    <div class="stat" title="Explosionsradius">🔥 <span id="statRadius">5</span></div>
+    <div class="stat" title="Tempo">⚡ <span id="statSpeed">1</span></div>
+    <div class="stat off" id="statPierceBox" title="Durchschlag: Flammen gehen durch Kisten">☄️ <span id="statPierce">–</span></div>
+    <div class="stat" title="Atombomben">☢️ <span id="statNukes">0</span></div>
+    <div class="stat" title="Kills"><span class="label">Kills</span> <span id="statKills">0</span></div>
+    <div class="stat" title="Kills ohne zu sterben"><span class="label">Serie</span> <span id="statStreak">0</span></div>
+  </div>
+
+  <div id="side">
+    <div id="lbBox" class="panel">
+      <div class="panelTitle">🏆 BESTENLISTE</div>
+      <ol id="lb"></ol>
+    </div>
+    <div id="feed"></div>
+  </div>
+
+  <div id="mapBox" class="panel">
+    <div id="online">Verbinde…</div>
+    <canvas id="minimap"></canvas>
+  </div>
+
+  <button id="mute" title="Ton an/aus (M)">🔊</button>
+
+  <div id="callout"></div>
+
+  <div id="death" class="hidden">
+    <div class="boom">💥 BOOM!</div>
+    <div id="deathBy"></div>
+    <div id="deathTimer"></div>
+  </div>
+
+  <div id="reconnect" class="hidden">⚠️ Verbindung verloren – verbinde neu…</div>
+
+  <!-- start screen, the live world is visible behind it -->
+  <div id="start">
+    <div class="startCard">
+      <h1 id="title">BOMBER DENO CROCKODELO</h1>
+      <p class="subtitle">Das Bomben-MMO: Kisten sprengen, Power-ups sammeln, Nummer 1 werden!</p>
+      <div class="joinRow">
+        <input id="nameInput" maxlength="16" placeholder="Dein Name" autocomplete="off" spellcheck="false" />
+        <button id="playButton">SPIELEN</button>
+      </div>
+      <div class="help">
+        <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>←↑↓→</kbd> laufen</span>
+        <span><kbd>Leertaste</kbd> Bombe legen</span>
+        <span><kbd>M</kbd> Ton an/aus</span>
+      </div>
+      <div class="help touchHelp">
+        <span>🕹️ Steuerkreuz links: laufen</span>
+        <span>💣 Knopf rechts: Bombe legen</span>
+      </div>
+      <div class="powerups">💣 mehr Bomben · 🔥 größere Explosion · ⚡ schneller · ❤️ Extraleben · ☄️ Durchschlag ·
+        ☢️ Atombombe</div>
+      <div class="live">Live: Im Hintergrund läuft gerade das echte Spiel</div>
+    </div>
+  </div>
+
+  <!-- on-screen controls for phones and tablets -->
+  <div id="touch">
+    <div id="dpad">
+      <div id="dpadKnob"></div>
+    </div>
+    <button id="bombButton">💣</button>
+  </div>
 </body>
 
 </html>
